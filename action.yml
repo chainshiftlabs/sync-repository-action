@@ -143,12 +143,10 @@ runs:
         fi
         
         # Get the latest commit message from source repo
-        cd /tmp/source-repo
-        LATEST_COMMIT_MSG=$(git log -1 --pretty=format:"%s")
-        LATEST_COMMIT_SHA=$(git log -1 --pretty=format:"%h")
+        LATEST_COMMIT_MSG=$(cd /tmp/source-repo && git log -1 --pretty=format:"%s")
+        LATEST_COMMIT_SHA=$(cd /tmp/source-repo && git log -1 --pretty=format:"%h")
         echo "latest_commit_msg=$LATEST_COMMIT_MSG" >> $GITHUB_OUTPUT
         echo "latest_commit_sha=$LATEST_COMMIT_SHA" >> $GITHUB_OUTPUT
-        cd -
         
         # Prepare paths
         if [ -n "$SOURCE_PATH" ]; then
