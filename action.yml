@@ -119,6 +119,15 @@ runs:
         echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
         git checkout -b $BRANCH_NAME
         
+        # Verify branch was created successfully
+        CURRENT_BRANCH=$(git branch --show-current)
+        if [ "$CURRENT_BRANCH" != "$BRANCH_NAME" ]; then
+          echo "Error: Failed to create or switch to branch $BRANCH_NAME"
+          echo "Current branch is: $CURRENT_BRANCH"
+          exit 1
+        fi
+        echo "Successfully switched to branch: $BRANCH_NAME"
+        
         # Clone source repository with proper authentication
         echo "Cloning source repository: $SOURCE_REPO"
         # Try with token first, fallback to public access if it fails
@@ -177,6 +186,9 @@ runs:
           echo "Changes detected"
           git add -A
           
+          # Verify we're on the correct branch before committing
+          echo "Current branch before commit: $(git branch --show-current)"
+          
           # Commit changes
           if [ -n "$COMMIT_MESSAGE" ]; then
             git commit -m "$COMMIT_MESSAGE"
@@ -194,7 +206,14 @@ runs:
           # Ensure we're pushing to the correct repository
           # GitHub Actions sets GITHUB_REPOSITORY as owner/repo format
           CURRENT_REPO="${GITHUB_REPOSITORY}"
+          echo "Pushing to repository: $CURRENT_REPO"
+          echo "Pushing branch: $BRANCH_NAME"
+          echo "Current branch: $(git branch --show-current)"
+          
+          # Reset remote URL to current repository
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${CURRENT_REPO}.git"
+          echo "Remote URL after reset:"
+          git remote -v
           
           # Push changes to the current repository
           git push -u origin $BRANCH_NAME
