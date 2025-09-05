@@ -246,21 +246,22 @@ runs:
           const sourceBranch = '${{ inputs.source-branch }}';
           const sourcePath = '${{ inputs.source-path }}' || 'root';
           const targetPath = '${{ inputs.target-path }}' || 'root';
-          const latestCommitMsg = '${{ steps.sync.outputs.latest_commit_msg }}';
+          const latestCommitMsg = ${{ toJSON(steps.sync.outputs.latest_commit_msg) }};
           const latestCommitSha = '${{ steps.sync.outputs.latest_commit_sha }}';
           
           // Extract repo name from owner/repo format
           const repoName = sourceRepo.split('/')[1];
           
           // Use custom PR title if provided, otherwise use the new format
-          let prTitle = '${{ inputs.pr-title }}';
+          let prTitle = ${{ toJSON(inputs.pr-title) }};
           if (!prTitle || prTitle === 'Sync content from upstream repository') {
             prTitle = `Synchronized ${repoName}: ${latestCommitMsg}`;
           }
           
-          let prBody = '${{ inputs.pr-body }}';
+          let prBody = ${{ toJSON(inputs.pr-body) }};
           if (!prBody) {
-            const ignorePatterns = `${{ inputs.ignore-patterns }}`;
+            // Use JSON parsing to handle multiline strings safely
+            const ignorePatterns = ${{ toJSON(inputs.ignore-patterns) }};
             const patternsList = ignorePatterns ? ignorePatterns.split('\n').filter(p => p.trim()).map(p => `- \`${p}\``).join('\n') : '- None';
             
             prBody = `## 📋 Summary
