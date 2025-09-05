@@ -255,7 +255,12 @@ runs:
           // Use custom PR title if provided, otherwise use the new format
           let prTitle = ${{ toJSON(inputs.pr-title) }};
           if (!prTitle || prTitle === 'Sync content from upstream repository') {
-            prTitle = `Synchronized ${repoName}: ${latestCommitMsg}`;
+            prTitle = `[Sync Bot] Synchronized ${repoName}: ${latestCommitMsg}`;
+          } else {
+            // Add [Sync Bot] prefix if not already present
+            if (!prTitle.startsWith('[Sync Bot]')) {
+              prTitle = `[Sync Bot] ${prTitle}`;
+            }
           }
           
           let prBody = ${{ toJSON(inputs.pr-body) }};
