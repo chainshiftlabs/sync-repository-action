@@ -98,6 +98,10 @@ runs:
       run: |
         set -e
         
+        # Setup git config
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
         # Create branch
         BRANCH_NAME="${BRANCH_PREFIX}-$(date +%Y%m%d-%H%M%S)"
         echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
