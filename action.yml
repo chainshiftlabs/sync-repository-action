@@ -87,8 +87,8 @@ runs:
     - name: Setup Git
       shell: bash
       run: |
-        git config user.name "${{ inputs.git-user-name }}"
-        git config user.email "${{ inputs.git-user-email }}"
+        git config --global user.name "${{ inputs.git-user-name }}"
+        git config --global user.email "${{ inputs.git-user-email }}"
 
     - name: Run sync script
       id: sync
