@@ -258,7 +258,7 @@ runs:
           
           ### Ignored Patterns
           The following patterns were excluded from sync:
-          ${{ inputs.ignore-patterns }}.split('\n').filter(p => p.trim()).map(p => `- \`${p}\``).join('\n')}
+          ${('${{ inputs.ignore-patterns }}' || '').split('\n').filter(p => p.trim()).map(p => `- \`${p}\``).join('\n') || '- None'}}
           
           ### Changes
           Please review the changes in the Files changed tab.
