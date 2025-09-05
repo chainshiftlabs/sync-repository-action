@@ -1,0 +1,47 @@
+name: Example Sync Workflow
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 1'  # Run weekly on Mondays
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      
+    steps:
+      # Basic usage - sync entire repository
+      - name: Sync from upstream
+        uses: chainshiftlabs/sync-repository-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          source-repo: 'octocat/Hello-World'
+          source-branch: 'main'
+
+          
+      # Advanced usage with custom patterns
+      # - name: Sync with custom settings
+      #   uses: chainshiftlabs/sync-repository-action@v1
+      #   with:
+      #     source-repo: 'facebook/react'
+      #     source-branch: 'main'
+      #     source-path: 'packages/react/src'
+      #     target-path: 'vendor/react'
+      #     ignore-patterns: |
+      #       *.test.js
+      #       *.spec.js
+      #       __tests__/**
+      #       __mocks__/**
+      #       *.md
+      #     pr-title: 'Update React source from upstream'
+      #     pr-body: |
+      #       ## React Source Update
+      #       
+      #       This PR updates our vendored React source code.
+      #       
+      #       Please review the changes carefully.
+      #     branch-prefix: 'react-update'
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
