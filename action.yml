@@ -51,7 +51,11 @@ inputs:
   delete-obsolete:
     description: 'Delete files in target that dont exist in source'
     required: false
-    default: 'true'
+    default: 'false'
+  sync-mode:
+    description: 'Sync mode: update (only update existing files and add new ones) or replace (full sync)'
+    required: false
+    default: 'update'
   git-user-name:
     description: 'Git user name for commits'
     required: false
@@ -102,6 +106,7 @@ runs:
         BRANCH_PREFIX: ${{ inputs.branch-prefix }}
         COMMIT_MESSAGE: ${{ inputs.commit-message }}
         DELETE_OBSOLETE: ${{ inputs.delete-obsolete }}
+        SYNC_MODE: ${{ inputs.sync-mode }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         set -e
@@ -163,15 +168,25 @@ runs:
         echo ".git/" > /tmp/rsync-exclude.txt
         echo "$IGNORE_PATTERNS" >> /tmp/rsync-exclude.txt
         
-        # Prepare rsync options
-        RSYNC_OPTS="-av"
-        if [ "$DELETE_OBSOLETE" == "true" ]; then
-          RSYNC_OPTS="$RSYNC_OPTS --delete"
+        # Prepare rsync options based on sync mode
+        if [ "$SYNC_MODE" == "update" ]; then
+          # Update mode: only update existing files and add new ones, don't delete
+          RSYNC_OPTS="-av --update"
+          echo "Using UPDATE mode: Only updating changed files and adding new files from template"
+        else
+          # Replace mode: full sync
+          RSYNC_OPTS="-av"
+          if [ "$DELETE_OBSOLETE" == "true" ]; then
+            RSYNC_OPTS="$RSYNC_OPTS --delete"
+            echo "Using REPLACE mode with delete: Full sync with deletion of obsolete files"
+          else
+            echo "Using REPLACE mode: Full sync without deletion"
+          fi
         fi
         
         # Sync files
         echo "Current branch before rsync: $(git branch --show-current)"
-        echo "Syncing files with rsync..."
+        echo "Syncing files with rsync options: $RSYNC_OPTS"
         rsync $RSYNC_OPTS \
           --exclude-from=/tmp/rsync-exclude.txt \
           "$SOURCE_DIR/" \
@@ -245,6 +260,9 @@ runs:
           
           let prBody = '${{ inputs.pr-body }}';
           if (!prBody) {
+            const ignorePatterns = `${{ inputs.ignore-patterns }}`;
+            const patternsList = ignorePatterns ? ignorePatterns.split('\n').filter(p => p.trim()).map(p => `- \`${p}\``).join('\n') : '- None';
+            
             prBody = `## 📋 Summary
           
           This PR syncs content from the upstream repository.
@@ -258,7 +276,7 @@ runs:
           
           ### Ignored Patterns
           The following patterns were excluded from sync:
-          ${('${{ inputs.ignore-patterns }}' || '').split('\n').filter(p => p.trim()).map(p => `- \`${p}\``).join('\n') || '- None'}}
+          ${patternsList}
           
           ### Changes
           Please review the changes in the Files changed tab.
