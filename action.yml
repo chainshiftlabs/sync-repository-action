@@ -159,8 +159,9 @@ runs:
           mkdir -p "$TARGET_PATH"
         fi
         
-        # Create exclude file
-        echo "$IGNORE_PATTERNS" > /tmp/rsync-exclude.txt
+        # Create exclude file - always exclude .git directory
+        echo ".git/" > /tmp/rsync-exclude.txt
+        echo "$IGNORE_PATTERNS" >> /tmp/rsync-exclude.txt
         
         # Prepare rsync options
         RSYNC_OPTS="-av"
@@ -169,11 +170,13 @@ runs:
         fi
         
         # Sync files
+        echo "Current branch before rsync: $(git branch --show-current)"
         echo "Syncing files with rsync..."
         rsync $RSYNC_OPTS \
           --exclude-from=/tmp/rsync-exclude.txt \
           "$SOURCE_DIR/" \
           "${TARGET_PATH:-.}/"
+        echo "Current branch after rsync: $(git branch --show-current)"
         
         # Check for changes
         if git diff --quiet && git diff --staged --quiet; then
