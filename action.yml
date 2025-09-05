@@ -106,11 +106,15 @@ runs:
         # Clone source repository with proper authentication
         echo "Cloning source repository: $SOURCE_REPO"
         # Try with token first, fallback to public access if it fails
-        if git clone --depth 10 --branch $SOURCE_BRANCH https://${GITHUB_TOKEN}@github.com/$SOURCE_REPO.git /tmp/source-repo 2>/dev/null; then
+        if [ -n "$GITHUB_TOKEN" ] && git clone --depth 10 --branch $SOURCE_BRANCH https://${GITHUB_TOKEN}@github.com/$SOURCE_REPO.git /tmp/source-repo 2>/dev/null; then
           echo "Cloned using provided token"
         else
           echo "Attempting public access..."
-          git clone --depth 10 --branch $SOURCE_BRANCH https://github.com/$SOURCE_REPO.git /tmp/source-repo
+          if ! git clone --depth 10 --branch $SOURCE_BRANCH https://github.com/$SOURCE_REPO.git /tmp/source-repo 2>/dev/null; then
+            echo "Error: Failed to clone repository. If this is a private repository, please ensure a valid GitHub token is provided."
+            exit 1
+          fi
+          echo "Cloned using public access"
         fi
         
         # Get the latest commit message from source repo
