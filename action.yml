@@ -78,6 +78,12 @@ outputs:
   branch-name:
     description: 'Name of the created branch'
     value: ${{ steps.sync.outputs.branch_name }}
+  pr-skipped:
+    description: 'Whether PR creation was skipped due to duplicate'
+    value: ${{ steps.create-pr.outputs.pr_skipped }}
+  skip-reason:
+    description: 'Reason for skipping PR creation'
+    value: ${{ steps.create-pr.outputs.skip_reason }}
 
 runs:
   using: 'composite'
@@ -248,6 +254,7 @@ runs:
           const targetPath = '${{ inputs.target-path }}' || 'root';
           const latestCommitMsg = ${{ toJSON(steps.sync.outputs.latest_commit_msg) }};
           const latestCommitSha = '${{ steps.sync.outputs.latest_commit_sha }}';
+          const branchName = '${{ steps.sync.outputs.branch_name }}';
           
           // Extract repo name from owner/repo format
           const repoName = sourceRepo.split('/')[1];
@@ -260,6 +267,81 @@ runs:
             // Add [Sync Bot] prefix if not already present
             if (!prTitle.startsWith('[Sync Bot]')) {
               prTitle = `[Sync Bot] ${prTitle}`;
+            }
+          }
+          
+          // Check for existing open PRs with the same changes
+          console.log('Checking for existing open PRs...');
+          
+          // Get all open PRs
+          const openPRs = await github.rest.pulls.list({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open',
+            base: context.payload.repository.default_branch,
+          });
+          
+          // Check if there's already a PR from a sync branch with similar title
+          const existingPR = openPRs.data.find(pr => {
+            // Check if it's a sync bot PR
+            if (!pr.title.startsWith('[Sync Bot]')) {
+              return false;
+            }
+            
+            // Check if it's from the same source repository
+            if (pr.title.includes(repoName)) {
+              return true;
+            }
+            
+            // Also check the body for source repository information
+            if (pr.body && pr.body.includes(`Repository**: [${sourceRepo}]`)) {
+              return true;
+            }
+            
+            return false;
+          });
+          
+          if (existingPR) {
+            console.log(`Found existing PR #${existingPR.number}: ${existingPR.title}`);
+            
+            // Compare the changes between the existing PR and the new branch
+            try {
+              // Get the diff between the existing PR branch and the new branch
+              const comparison = await github.rest.repos.compareCommits({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                base: existingPR.head.ref,
+                head: branchName,
+              });
+              
+              // If there are no differences, skip creating a new PR
+              if (comparison.data.files.length === 0) {
+                console.log('The changes are identical to the existing PR. Skipping PR creation.');
+                console.log(`Existing PR URL: ${existingPR.html_url}`);
+                core.setOutput('pr_url', existingPR.html_url);
+                core.setOutput('pr_number', existingPR.number);
+                core.setOutput('pr_skipped', 'true');
+                core.setOutput('skip_reason', 'duplicate');
+                
+                // Clean up the branch we just created since we don't need it
+                try {
+                  await github.rest.git.deleteRef({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    ref: `heads/${branchName}`,
+                  });
+                  console.log(`Deleted unnecessary branch: ${branchName}`);
+                } catch (error) {
+                  console.log(`Could not delete branch ${branchName}: ${error.message}`);
+                }
+                
+                return;
+              } else {
+                console.log(`Found ${comparison.data.files.length} different files. Creating new PR.`);
+              }
+            } catch (error) {
+              console.log(`Could not compare branches: ${error.message}`);
+              console.log('Proceeding with PR creation...');
             }
           }
           
@@ -296,10 +378,11 @@ runs:
             repo: context.repo.repo,
             title: prTitle,
             body: prBody,
-            head: '${{ steps.sync.outputs.branch_name }}',
+            head: branchName,
             base: context.payload.repository.default_branch,
           });
           
           console.log(`Pull request created: ${pr.data.html_url}`);
           core.setOutput('pr_url', pr.data.html_url);
           core.setOutput('pr_number', pr.data.number);
+          core.setOutput('pr_skipped', 'false');
