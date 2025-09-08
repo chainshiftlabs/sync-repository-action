@@ -176,9 +176,17 @@ runs:
         
         # Prepare rsync options based on sync mode
         if [ "$SYNC_MODE" == "update" ]; then
-          # Update mode: only update existing files and add new ones, don't delete
-          RSYNC_OPTS="-av --update"
-          echo "Using UPDATE mode: Only updating changed files and adding new files from template"
+          # Update mode: add new files and update existing ones based on checksum, not timestamp
+          # Using --checksum to ensure content-based comparison
+          RSYNC_OPTS="-av --checksum"
+          echo "Using UPDATE mode: Adding new files and updating existing files based on content"
+          
+          # Create a list of existing files to preserve those not in source
+          if [ -n "$TARGET_PATH" ] && [ -d "$TARGET_PATH" ]; then
+            find "$TARGET_PATH" -type f > /tmp/existing-files.txt 2>/dev/null || true
+          else
+            find . -type f > /tmp/existing-files.txt 2>/dev/null || true
+          fi
         else
           # Replace mode: full sync
           RSYNC_OPTS="-av"
@@ -193,20 +201,40 @@ runs:
         # Sync files
         echo "Current branch before rsync: $(git branch --show-current)"
         echo "Syncing files with rsync options: $RSYNC_OPTS"
+        
+        # Show source files that will be synced
+        echo "=== Files in source directory ==="
+        ls -la "$SOURCE_DIR/.github/workflows/" 2>/dev/null || echo "No .github/workflows in source"
+        
         rsync $RSYNC_OPTS \
           --exclude-from=/tmp/rsync-exclude.txt \
           "$SOURCE_DIR/" \
           "${TARGET_PATH:-.}/"
+        
         echo "Current branch after rsync: $(git branch --show-current)"
         
-        # Check for changes
-        if git diff --quiet && git diff --staged --quiet; then
+        # Show target files after sync
+        echo "=== Files in target after rsync ==="
+        ls -la "${TARGET_PATH:-.}/.github/workflows/" 2>/dev/null || echo "No .github/workflows in target"
+        
+        # Debug: Show git status before checking for changes
+        echo "=== Git status after rsync ==="
+        git status --short
+        
+        # Add all changes including untracked files
+        git add -A
+        
+        # Debug: Show what was staged
+        echo "=== Git diff --staged --stat ==="
+        git diff --staged --stat
+        
+        # Check for changes after staging
+        if git diff --staged --quiet; then
           echo "has_changes=false" >> $GITHUB_OUTPUT
           echo "No changes detected"
         else
           echo "has_changes=true" >> $GITHUB_OUTPUT
           echo "Changes detected"
-          git add -A
           
           # Verify we're on the correct branch before committing
           echo "Current branch before commit: $(git branch --show-current)"
