@@ -272,6 +272,7 @@ runs:
           
           // Check for existing open PRs with the same changes
           console.log('Checking for existing open PRs...');
+          console.log(`Looking for PRs from source: ${sourceRepo}`);
           
           // Get all open PRs
           const openPRs = await github.rest.pulls.list({
@@ -280,6 +281,8 @@ runs:
             state: 'open',
             base: context.payload.repository.default_branch,
           });
+          
+          console.log(`Found ${openPRs.data.length} open PRs to check`);
           
           // Check if there's already a PR from a sync branch with similar title
           const existingPR = openPRs.data.find(pr => {
@@ -290,19 +293,73 @@ runs:
             
             // Check if it's from the same source repository
             if (pr.title.includes(repoName)) {
+              console.log(`Found PR with matching repo name in title: #${pr.number}`);
               return true;
             }
             
-            // Also check the body for source repository information
-            if (pr.body && pr.body.includes(`Repository**: [${sourceRepo}]`)) {
-              return true;
+            // Also check the body for source repository information (various formats)
+            if (pr.body) {
+              // Check for different possible formats in PR body
+              const bodyContainsRepo = 
+                pr.body.includes(`[${sourceRepo}]`) ||
+                pr.body.includes(`${sourceRepo}`) ||
+                pr.body.includes(`Repository**: [${sourceRepo}]`) ||
+                pr.body.includes(`**Repository**: [${sourceRepo}]`);
+              
+              if (bodyContainsRepo) {
+                console.log(`Found PR with matching repo in body: #${pr.number}`);
+                return true;
+              }
+            }
+            
+            // Also check if the PR branch starts with the same prefix pattern
+            if (pr.head && pr.head.ref) {
+              const isSyncBranch = pr.head.ref.startsWith('sync-');
+              if (isSyncBranch && pr.body && pr.body.includes(sourceRepo)) {
+                console.log(`Found sync branch PR with matching source: #${pr.number}`);
+                return true;
+              }
             }
             
             return false;
           });
           
-          if (existingPR) {
-            console.log(`Found existing PR #${existingPR.number}: ${existingPR.title}`);
+          // If no existing PR found by title/body, check commit messages for source repo
+          let finalExistingPR = existingPR;
+          if (!finalExistingPR) {
+            console.log('No PR found by title/body check. Checking commit messages...');
+            
+            // Check PRs with sync branches for commit messages
+            for (const pr of openPRs.data) {
+              if (pr.head && pr.head.ref && pr.head.ref.startsWith('sync-')) {
+                try {
+                  // Get commits from the PR
+                  const commits = await github.rest.pulls.listCommits({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: pr.number,
+                  });
+                  
+                  // Check if any commit message mentions the source repo
+                  const hasSourceRepo = commits.data.some(commit => 
+                    commit.commit.message.includes(sourceRepo) ||
+                    commit.commit.message.includes(`Sync content from ${sourceRepo}`)
+                  );
+                  
+                  if (hasSourceRepo) {
+                    console.log(`Found PR #${pr.number} with matching source in commit messages`);
+                    finalExistingPR = pr;
+                    break;
+                  }
+                } catch (error) {
+                  console.log(`Could not check commits for PR #${pr.number}: ${error.message}`);
+                }
+              }
+            }
+          }
+          
+          if (finalExistingPR) {
+            console.log(`Found existing PR #${finalExistingPR.number}: ${finalExistingPR.title}`);
             
             // Compare the changes between the existing PR and the new branch
             try {
@@ -310,16 +367,16 @@ runs:
               const comparison = await github.rest.repos.compareCommits({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                base: existingPR.head.ref,
+                base: finalExistingPR.head.ref,
                 head: branchName,
               });
               
               // If there are no differences, skip creating a new PR
               if (comparison.data.files.length === 0) {
                 console.log('The changes are identical to the existing PR. Skipping PR creation.');
-                console.log(`Existing PR URL: ${existingPR.html_url}`);
-                core.setOutput('pr_url', existingPR.html_url);
-                core.setOutput('pr_number', existingPR.number);
+                console.log(`Existing PR URL: ${finalExistingPR.html_url}`);
+                core.setOutput('pr_url', finalExistingPR.html_url);
+                core.setOutput('pr_number', finalExistingPR.number);
                 core.setOutput('pr_skipped', 'true');
                 core.setOutput('skip_reason', 'duplicate');
                 
@@ -343,6 +400,8 @@ runs:
               console.log(`Could not compare branches: ${error.message}`);
               console.log('Proceeding with PR creation...');
             }
+          } else {
+            console.log('No existing PR found. Creating new PR...');
           }
           
           let prBody = ${{ toJSON(inputs.pr-body) }};
