@@ -361,18 +361,37 @@ runs:
           if (finalExistingPR) {
             console.log(`Found existing PR #${finalExistingPR.number}: ${finalExistingPR.title}`);
             
-            // Compare the changes between the existing PR and the new branch
+            // Compare the actual changes each PR would introduce to the base branch
             try {
-              // Get the diff between the existing PR branch and the new branch
-              const comparison = await github.rest.repos.compareCommits({
+              const baseBranch = context.payload.repository.default_branch;
+              
+              // Get the diff of the existing PR against base
+              console.log(`Comparing existing PR branch (${finalExistingPR.head.ref}) with base (${baseBranch})`);
+              const existingPRDiff = await github.rest.repos.compareCommits({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                base: finalExistingPR.head.ref,
+                base: baseBranch,
+                head: finalExistingPR.head.ref,
+              });
+              
+              // Get the diff of the new branch against base
+              console.log(`Comparing new branch (${branchName}) with base (${baseBranch})`);
+              const newBranchDiff = await github.rest.repos.compareCommits({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                base: baseBranch,
                 head: branchName,
               });
               
-              // If there are no differences, skip creating a new PR
-              if (comparison.data.files.length === 0) {
+              // Compare the file changes
+              const existingFiles = new Set(existingPRDiff.data.files.map(f => `${f.filename}:${f.sha}`));
+              const newFiles = new Set(newBranchDiff.data.files.map(f => `${f.filename}:${f.sha}`));
+              
+              // Check if the changes are identical
+              const areIdentical = existingFiles.size === newFiles.size && 
+                [...existingFiles].every(file => newFiles.has(file));
+              
+              if (areIdentical) {
                 console.log('The changes are identical to the existing PR. Skipping PR creation.');
                 console.log(`Existing PR URL: ${finalExistingPR.html_url}`);
                 core.setOutput('pr_url', finalExistingPR.html_url);
@@ -394,7 +413,22 @@ runs:
                 
                 return;
               } else {
-                console.log(`Found ${comparison.data.files.length} different files. Creating new PR.`);
+                console.log(`Different changes detected:`);
+                console.log(`- Existing PR has ${existingFiles.size} file changes`);
+                console.log(`- New branch has ${newFiles.size} file changes`);
+                
+                // Show what's different
+                const onlyInExisting = [...existingFiles].filter(f => !newFiles.has(f));
+                const onlyInNew = [...newFiles].filter(f => !existingFiles.has(f));
+                
+                if (onlyInExisting.length > 0) {
+                  console.log(`Files only in existing PR: ${onlyInExisting.map(f => f.split(':')[0]).join(', ')}`);
+                }
+                if (onlyInNew.length > 0) {
+                  console.log(`Files only in new branch: ${onlyInNew.map(f => f.split(':')[0]).join(', ')}`);
+                }
+                
+                console.log('Creating new PR with different changes.');
               }
             } catch (error) {
               console.log(`Could not compare branches: ${error.message}`);
